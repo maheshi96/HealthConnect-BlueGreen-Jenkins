@@ -1,0 +1,63 @@
+name: ${COMPOSE_PROJECT_NAME:-healthconnect}
+
+services:
+  blue:
+    image: ${APP_IMAGE_REF:-healthconnect:local}
+    container_name: healthconnect-blue
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DEPLOYMENT_COLOR: blue
+      APP_VERSION: ${APP_VERSION:-local}
+      HEALTHCONNECT_API_TOKEN: ${HEALTHCONNECT_API_TOKEN:?Set HEALTHCONNECT_API_TOKEN}
+    networks:
+      - healthconnect
+    expose:
+      - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  green:
+    image: ${APP_IMAGE_REF:-healthconnect:local}
+    container_name: healthconnect-green
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DEPLOYMENT_COLOR: green
+      APP_VERSION: ${APP_VERSION:-local}
+      HEALTHCONNECT_API_TOKEN: ${HEALTHCONNECT_API_TOKEN:?Set HEALTHCONNECT_API_TOKEN}
+    networks:
+      - healthconnect
+    expose:
+      - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  router:
+    build:
+      context: ./nginx
+    image: healthconnect-router:local
+    container_name: healthconnect-router
+    restart: unless-stopped
+    networks:
+      - healthconnect
+    ports:
+      - "5000:8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+networks:
+  healthconnect:
+    name: healthconnect_net

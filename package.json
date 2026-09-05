@@ -1,0 +1,56 @@
+{
+  "name": "healthconnect-bluegreen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HealthConnect blue-green deployment lab for CYB204",
+  "main": "app/server.js",
+  "scripts": {
+    "start": "node app/server.js",
+    "lint": "eslint app tests",
+    "test": "npm run test:unit",
+    "test:unit": "jest tests/unit --runInBand --coverage --coverageDirectory=reports/coverage-unit",
+    "test:integration": "jest tests/integration --runInBand",
+    "test:security": "jest tests/security --runInBand",
+    "audit:dependencies": "npm audit --omit=dev --audit-level=high"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "express-rate-limit": "8.7.0",
+    "helmet": "8.3.0"
+  },
+  "devDependencies": {
+    "axios": "1.20.0",
+    "eslint": "10.9.1",
+    "eslint-plugin-security": "4.0.1",
+    "jest": "30.5.1",
+    "jest-junit": "17.0.0",
+    "supertest": "7.2.2"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "app/**/*.js",
+      "!app/server.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 80,
+        "lines": 80,
+        "statements": 80
+      }
+    },
+    "reporters": [
+      "default",
+      "jest-junit"
+    ]
+  },
+  "jest-junit": {
+    "outputDirectory": "reports",
+    "outputName": "junit.xml",
+    "addFileAttribute": "true"
+  }
+}

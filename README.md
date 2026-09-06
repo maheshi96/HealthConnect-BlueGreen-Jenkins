@@ -41,7 +41,7 @@ Jenkinsfile.linux-container  Optional Linux Jenkins pipeline
 - `docker version` and `docker compose version` work from PowerShell.
 - Git is installed and configured in Jenkins.
 - Jenkins has the Pipeline, Git, Credentials Binding, JUnit, and Artifact Manager functionality.
-- Docker Desktop is installed in its standard location: `C:\Program Files\Docker\Docker\resources\bin`.
+- Docker Desktop is installed either per-user under `%LOCALAPPDATA%\Programs\DockerDesktop` or for all users under `C:\Program Files\Docker\Docker`.
 - Docker Desktop is running before the Jenkins build starts.
 - Port `5000` is available for the Nginx router.
 

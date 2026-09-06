@@ -20,7 +20,8 @@ pipeline {
 
     environment {
         // Jenkins runs as a Windows service and may not inherit Docker Desktop's user PATH.
-        PATH = "C:/Program Files/Docker/Docker/resources/bin;${env.PATH}"
+        // Maheshika's installation uses Docker Desktop's per-user installation mode.
+        PATH = "C:\\Users\\DELL\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;C:\\Program Files\\Docker\\Docker\\resources\\bin;${env.PATH}"
         // A stable Compose project/network lets every build address the same blue/green pair.
         COMPOSE_PROJECT_NAME = 'healthconnect'
         IMAGE_NAME = 'healthconnect-app'
@@ -45,7 +46,7 @@ pipeline {
                 powershell '''
                     $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
                     if (-not $dockerCommand) {
-                        throw 'Docker CLI was not found. Expected Docker Desktop under C:/Program Files/Docker/Docker/resources/bin.'
+                        throw 'Docker CLI was not found in the configured per-user or all-users Docker Desktop folders.'
                     }
 
                     Write-Host "Docker CLI: $($dockerCommand.Source)"

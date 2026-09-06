@@ -1,0 +1,147 @@
+// Alternative pipeline for Jenkins running inside a Linux container.
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+        timestamps()
+        timeout(time: 45, unit: 'MINUTES')
+    }
+
+    parameters {
+        booleanParam(name: 'SIMULATE_POST_CUTOVER_FAILURE', defaultValue: false,
+            description: 'Stops the new live container to demonstrate automatic rollback.')
+    }
+
+    environment {
+        COMPOSE_PROJECT_NAME = 'healthconnect'
+        IMAGE_NAME = 'healthconnect-app'
+        HEALTHCONNECT_API_TOKEN = credentials('healthconnect-api-token')
+    }
+
+    stages {
+        stage('Checkout Source') {
+            steps {
+                deleteDir()
+                checkout scm
+                sh 'chmod +x scripts/*.sh && mkdir -p reports'
+            }
+        }
+
+        stage('Build Immutable Images') {
+            steps {
+                script {
+                    env.IMAGE_REF = "${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    env.TEST_IMAGE = "${env.IMAGE_NAME}-tests:${env.BUILD_NUMBER}"
+                    env.QUALITY_IMAGE = "${env.IMAGE_NAME}-quality:${env.BUILD_NUMBER}"
+                    env.ZAP_IMAGE = "${env.IMAGE_NAME}-zap:${env.BUILD_NUMBER}"
+                }
+                sh '''
+                    docker build --pull --target production -t "$IMAGE_REF" .
+                    docker build --target test-runner -t "$TEST_IMAGE" .
+                '''
+            }
+        }
+
+        stage('Static and Dependency Security Gate') {
+            steps { sh 'docker build --target quality-gate -t "$QUALITY_IMAGE" .' }
+        }
+
+        stage('Unit Tests and Coverage') {
+            steps { sh './scripts/run-tests.sh unit "$TEST_IMAGE"' }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'reports/junit-unit.xml'
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage-unit/**'
+                }
+            }
+        }
+
+        stage('Ensure Known-Good Blue Baseline') {
+            steps { sh './scripts/ensure-infrastructure.sh "$IMAGE_REF" "$BUILD_NUMBER"' }
+        }
+
+        stage('Determine Active and Idle Environments') {
+            steps {
+                script {
+                    def detected = sh(returnStdout: true, script: './scripts/detect-live.sh').trim()
+                    if (!(detected in ['blue', 'green'])) { error("Unexpected active environment: ${detected}") }
+                    env.LIVE_ENV = detected
+                    env.IDLE_ENV = detected == 'blue' ? 'green' : 'blue'
+                    echo "Currently LIVE: ${env.LIVE_ENV}; deployment target: ${env.IDLE_ENV}"
+                }
+            }
+        }
+
+        stage('Deploy Candidate to Idle Environment') {
+            steps {
+                sh '''
+                    export APP_IMAGE_REF="$IMAGE_REF" APP_VERSION="$BUILD_NUMBER"
+                    docker rm -f "healthconnect-$IDLE_ENV" >/dev/null 2>&1 || true
+                    docker compose up -d --no-deps "$IDLE_ENV"
+                '''
+            }
+        }
+
+        stage('Idle Environment Health Gate') {
+            steps { sh './scripts/wait-for-health.sh "$IDLE_ENV" "$BUILD_NUMBER"' }
+        }
+
+        stage('Integration Tests') {
+            steps { sh './scripts/run-tests.sh integration "$TEST_IMAGE" "$IDLE_ENV" "$BUILD_NUMBER"' }
+            post { always { junit allowEmptyResults: true, testResults: 'reports/junit-integration.xml' } }
+        }
+
+        stage('Application Security Tests') {
+            steps { sh './scripts/run-tests.sh security "$TEST_IMAGE" "$IDLE_ENV" "$BUILD_NUMBER"' }
+            post { always { junit allowEmptyResults: true, testResults: 'reports/junit-security.xml' } }
+        }
+
+        stage('OWASP ZAP DAST Gate') {
+            steps {
+                sh '''
+                    docker build -f security/Dockerfile.zap -t "$ZAP_IMAGE" security
+                    ./scripts/run-zap.sh "$IDLE_ENV" "$ZAP_IMAGE"
+                '''
+            }
+            post { always { archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/zap-report.*' } }
+        }
+
+        stage('Cut Over Traffic') {
+            steps {
+                sh './scripts/switch-traffic.sh "$IDLE_ENV"'
+                script { env.CUTOVER_COMPLETED = 'true' }
+            }
+        }
+
+        stage('Controlled Rollback Demonstration') {
+            when { expression { params.SIMULATE_POST_CUTOVER_FAILURE } }
+            steps { sh 'docker stop "healthconnect-$IDLE_ENV"' }
+        }
+
+        stage('Post-Cutover Smoke Test') {
+            steps { sh './scripts/smoke-test.sh "$IDLE_ENV" "$BUILD_NUMBER"' }
+        }
+    }
+
+    post {
+        unsuccessful {
+            script {
+                if (env.CUTOVER_COMPLETED == 'true' && env.LIVE_ENV && env.IDLE_ENV) {
+                    sh './scripts/rollback.sh "$LIVE_ENV" "$IDLE_ENV"'
+                } else {
+                    echo 'Pre-cutover failure: no rollback required because live traffic was unchanged.'
+                }
+            }
+        }
+        always {
+            archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/**'
+            sh '''
+                ids="$(docker ps -aq --filter "label=healthconnect.ci.build=$BUILD_NUMBER")"
+                [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+            '''
+        }
+        success { echo 'HealthConnect release passed all gates and is live.' }
+    }
+}

@@ -22,6 +22,8 @@ pipeline {
         // Jenkins runs as a Windows service and may not inherit Docker Desktop's user PATH.
         // Maheshika's installation uses Docker Desktop's per-user installation mode.
         PATH = "C:\\Users\\DELL\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;C:\\Program Files\\Docker\\Docker\\resources\\bin;${env.PATH}"
+        // Reuse the per-user Docker context while Jenkins runs under its service account.
+        DOCKER_CONFIG = 'C:/Users/DELL/.docker'
         // A stable Compose project/network lets every build address the same blue/green pair.
         COMPOSE_PROJECT_NAME = 'healthconnect'
         IMAGE_NAME = 'healthconnect-app'
@@ -42,7 +44,8 @@ pipeline {
 
         stage('Validate Docker Agent') {
             steps {
-                // Fail early with a clear message if the CLI or Docker Desktop engine is unavailable.
+                // Fail early if Docker is unavailable, then resolve Compose independently
+                // of Docker CLI plugin discovery under the Windows Jenkins service account.
                 powershell '''
                     $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
                     if (-not $dockerCommand) {
@@ -53,6 +56,60 @@ pipeline {
                     docker version
                     if ($LASTEXITCODE -ne 0) {
                         throw 'Docker CLI is installed, but the Docker Desktop engine is unavailable.'
+                    }
+                '''
+                script {
+                    env.COMPOSE_EXE = powershell(
+                        returnStdout: true,
+                        script: '''
+                            $candidates = @(
+                                'C:/Users/DELL/.docker/cli-plugins/docker-compose.exe',
+                                'C:/Users/DELL/AppData/Local/Programs/DockerDesktop/resources/bin/docker-compose.exe',
+                                'C:/Users/DELL/AppData/Local/Programs/DockerDesktop/resources/cli-plugins/docker-compose.exe',
+                                'C:/Program Files/Docker/Docker/resources/bin/docker-compose.exe',
+                                'C:/Program Files/Docker/Docker/resources/cli-plugins/docker-compose.exe',
+                                'C:/Program Files/Docker/cli-plugins/docker-compose.exe'
+                            )
+
+                            $pathCommand = Get-Command docker-compose.exe -ErrorAction SilentlyContinue
+                            if ($pathCommand) {
+                                $candidates = @($pathCommand.Source) + $candidates
+                            }
+
+                            foreach ($candidate in $candidates | Select-Object -Unique) {
+                                if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+                                    Write-Output ([System.IO.Path]::GetFullPath($candidate))
+                                    exit 0
+                                }
+                            }
+
+                            $searchRoots = @(
+                                'C:/Users/DELL/AppData/Local/Programs/DockerDesktop',
+                                'C:/Program Files/Docker'
+                            )
+
+                            foreach ($root in $searchRoots) {
+                                if (Test-Path -LiteralPath $root -PathType Container) {
+                                    $match = Get-ChildItem -LiteralPath $root -Filter docker-compose.exe -File -Recurse -ErrorAction SilentlyContinue |
+                                        Select-Object -First 1
+
+                                    if ($match) {
+                                        Write-Output $match.FullName
+                                        exit 0
+                                    }
+                                }
+                            }
+
+                            throw 'docker-compose.exe was not found in the per-user or all-users Docker Desktop installation.'
+                        '''
+                    ).trim()
+
+                    echo "Docker Compose executable: ${env.COMPOSE_EXE}"
+                }
+                powershell '''
+                    & $env:COMPOSE_EXE version
+                    if ($LASTEXITCODE -ne 0) {
+                        throw 'Docker Compose was found but could not run under the Jenkins service account.'
                     }
                 '''
             }
@@ -141,7 +198,7 @@ pipeline {
                     $env:APP_VERSION = $env:BUILD_NUMBER
 
                     docker rm -f "healthconnect-$env:IDLE_ENV" 2>$null | Out-Null
-                    docker compose up -d --no-deps $env:IDLE_ENV
+                    & $env:COMPOSE_EXE up -d --no-deps $env:IDLE_ENV
                     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                 '''
             }

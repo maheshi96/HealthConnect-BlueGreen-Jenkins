@@ -11,6 +11,11 @@ $ErrorActionPreference = 'Stop'
 $env:APP_IMAGE_REF = $ImageReference
 $env:APP_VERSION = $Version
 
+if ([string]::IsNullOrWhiteSpace($env:COMPOSE_EXE) -or
+    -not (Test-Path -LiteralPath $env:COMPOSE_EXE -PathType Leaf)) {
+    throw 'COMPOSE_EXE is not configured. The Jenkins validation stage must locate docker-compose.exe first.'
+}
+
 function Invoke-DockerCommand {
     param([Parameter(Mandatory = $true)][scriptblock]$Command)
 
@@ -68,7 +73,7 @@ Write-Host "No working router exists; recreating blue from $ImageReference."
 $null = Invoke-DockerCommand { docker rm -f healthconnect-blue }
 
 $blueCreate = Invoke-DockerCommand {
-    docker compose up -d --no-deps --force-recreate blue
+    & $env:COMPOSE_EXE up -d --no-deps --force-recreate blue
 }
 if ($blueCreate.Output) { $blueCreate.Output | Write-Host }
 if ($blueCreate.ExitCode -ne 0) { throw 'Unable to create the blue baseline.' }
@@ -77,7 +82,7 @@ if ($blueCreate.ExitCode -ne 0) { throw 'Unable to create the blue baseline.' }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host 'Creating the Nginx traffic router with blue as the initial target.'
-$routerCreate = Invoke-DockerCommand { docker compose up -d --no-deps --build router }
+$routerCreate = Invoke-DockerCommand { & $env:COMPOSE_EXE up -d --no-deps --build router }
 if ($routerCreate.Output) { $routerCreate.Output | Write-Host }
 if ($routerCreate.ExitCode -ne 0) { throw 'Unable to create the HealthConnect router.' }
 

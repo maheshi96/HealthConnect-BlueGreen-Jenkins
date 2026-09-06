@@ -48,7 +48,7 @@ for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
         }
     }
 
-    Write-Host "Health attempt $attempt/$Attempts for $container: $health"
+    Write-Host "Health attempt $attempt/$Attempts for ${container}: $health"
     Start-Sleep -Seconds $DelaySeconds
 }
 

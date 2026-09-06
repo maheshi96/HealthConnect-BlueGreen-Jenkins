@@ -166,6 +166,10 @@ HEALTH CHECK PASSED: blue version <build-number>
 BASELINE READY: router and blue environment are reachable.
 ```
 
+## OWASP ZAP image download
+
+The official stable ZAP image is large. The Windows pipeline performs a quiet pull with three attempts and increasing delays before creating the small HealthConnect policy image. If Docker reports an RPC `EOF` while extracting the image, restart Docker Desktop, ensure that several gigabytes of disk space are available, and run the build again; successfully downloaded layers are normally reused.
+
 ## Security and compliance boundary
 
 The application uses synthetic records, secret injection, constant-time token comparison, rate limiting, security headers, no-store responses, generic errors, non-root containers, read-only application filesystems, and disabled Nginx access logs. These are demonstrable controls, but this local HTTP lab is not a production HIPAA environment. Production also requires TLS, a real identity provider with MFA, role-based authorisation, encrypted storage, protected audit logs, secret rotation, monitoring, backup/recovery, and a formal risk assessment.

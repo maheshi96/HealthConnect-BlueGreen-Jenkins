@@ -170,7 +170,7 @@ pipeline {
             steps {
                 // ZAP probes the idle colour; release-blocking findings stop before cutover.
                 powershell '''
-                    docker build --file security/Dockerfile.zap --tag $env:ZAP_IMAGE security
+                    & ./scripts/build-zap-image.ps1 -ZapImage $env:ZAP_IMAGE
                     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
                     & ./scripts/run-zap.ps1 -TargetColour $env:IDLE_ENV -ZapImage $env:ZAP_IMAGE

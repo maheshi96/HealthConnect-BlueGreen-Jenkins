@@ -11,31 +11,60 @@ param(
 $ErrorActionPreference = 'Stop'
 $container = "healthconnect-zap-$env:BUILD_NUMBER"
 
-docker rm -f $container *> $null
+function Invoke-DockerCommand {
+    param([Parameter(Mandatory = $true)][scriptblock]$Command)
 
-docker create --name $container `
-    --label "healthconnect.ci.build=$env:BUILD_NUMBER" `
-    --network healthconnect_net `
-    $ZapImage `
-    zap-baseline.py `
-    -t "http://healthconnect-${TargetColour}:3000" `
-    -c zap-baseline.conf `
-    -r zap-report.html `
-    -J zap-report.json | Out-Null
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $Command 2>&1
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
 
-if ($LASTEXITCODE -ne 0) { throw 'Unable to create the OWASP ZAP container.' }
+$null = Invoke-DockerCommand { docker rm -f $container }
 
-docker start -a $container
-$zapExitCode = $LASTEXITCODE
+$createResult = Invoke-DockerCommand {
+    docker create --name $container `
+        --label "healthconnect.ci.build=$env:BUILD_NUMBER" `
+        --network healthconnect_net `
+        $ZapImage `
+        zap-baseline.py `
+        -t "http://healthconnect-${TargetColour}:3000" `
+        -c zap-baseline.conf `
+        -r zap-report.html `
+        -J zap-report.json
+}
+
+if ($createResult.ExitCode -ne 0) {
+    throw 'Unable to create the OWASP ZAP container.'
+}
+
+$scanResult = Invoke-DockerCommand { docker start -a $container }
+$zapExitCode = $scanResult.ExitCode
+foreach ($line in @($scanResult.Output)) {
+    Write-Host ([string]$line)
+}
 
 New-Item -ItemType Directory -Path reports -Force | Out-Null
-docker cp "${container}:/zap/wrk/zap-report.html" reports/zap-report.html
-docker cp "${container}:/zap/wrk/zap-report.json" reports/zap-report.json
-docker rm -f $container *> $null
+$htmlCopy = Invoke-DockerCommand {
+    docker cp "${container}:/zap/wrk/zap-report.html" reports/zap-report.html
+}
+$jsonCopy = Invoke-DockerCommand {
+    docker cp "${container}:/zap/wrk/zap-report.json" reports/zap-report.json
+}
+$null = Invoke-DockerCommand { docker rm -f $container }
 
 # ZAP baseline: 0 = pass, 1 = policy FAIL, 2 = warnings only, 3 = scan error.
 if ($zapExitCode -eq 1 -or $zapExitCode -eq 3) {
     throw "OWASP ZAP failed with exit code $zapExitCode."
+}
+
+if ($htmlCopy.ExitCode -ne 0 -or $jsonCopy.ExitCode -ne 0) {
+    throw 'OWASP ZAP completed but its HTML or JSON report could not be collected.'
 }
 
 if ($zapExitCode -eq 2) {

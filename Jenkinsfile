@@ -20,9 +20,8 @@ pipeline {
 
     environment {
         // Jenkins runs as a Windows service and may not inherit Docker Desktop's user PATH.
-        //  installation uses Docker Desktop's per-user installation mode.
+        // Maheshika's installation uses Docker Desktop's per-user installation mode.
         PATH = "C:\\Users\\DELL\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;C:\\Program Files\\Docker\\Docker\\resources\\bin;${env.PATH}"
-        DOCKER_CONFIG = "C:\\Users\\DELL\\.docker"
         // A stable Compose project/network lets every build address the same blue/green pair.
         COMPOSE_PROJECT_NAME = 'healthconnect'
         IMAGE_NAME = 'healthconnect-app'
@@ -53,7 +52,7 @@ pipeline {
                     Write-Host "Docker CLI: $($dockerCommand.Source)"
                     docker version
                     if ($LASTEXITCODE -ne 0) {
-                        throw 'Docker Compose is unavailable to the Jenkins service account.'
+                        throw 'Docker CLI is installed, but the Docker Desktop engine is unavailable.'
                     }
                 '''
             }

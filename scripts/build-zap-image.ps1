@@ -8,6 +8,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $baseImage = 'zaproxy/zap-stable:latest'
+$configPath = Join-Path $PSScriptRoot '../security/zap-baseline.conf'
+
+# ZAP requires three TAB-separated columns for every non-comment baseline rule.
+# Validate locally before pulling or building the scanner image so formatting
+# mistakes fail quickly and identify the exact source line that must be fixed.
+if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    throw "ZAP baseline configuration was not found: $configPath"
+}
+
+$lineNumber = 0
+foreach ($line in Get-Content -LiteralPath $configPath) {
+    $lineNumber++
+    if ([string]::IsNullOrWhiteSpace($line) -or $line.TrimStart().StartsWith('#')) {
+        continue
+    }
+
+    $columns = $line -split "`t", 3
+    if ($columns.Count -ne 3 -or
+        $columns[0] -notmatch '^(?:\*|\d+)$' -or
+        $columns[1] -notin @('IGNORE', 'WARN', 'FAIL', 'OUTOFSCOPE') -or
+        [string]::IsNullOrWhiteSpace($columns[2])) {
+        throw "Invalid ZAP baseline rule on line $lineNumber. Use: rule-id<TAB>action<TAB>description."
+    }
+}
+
+Write-Host 'ZAP baseline configuration format is valid.'
 
 function Invoke-DockerCommand {
     param([Parameter(Mandatory = $true)][scriptblock]$Command)

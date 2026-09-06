@@ -61,25 +61,17 @@ if ($routerLookup.Output -contains 'healthconnect-router') {
     throw 'The existing router could not reach its current production environment.'
 }
 
-# A blue baseline is created only on the first run. Later runs must not alter live state.
-$blueLookup = Invoke-DockerCommand {
-    docker ps -a --filter 'name=^/healthconnect-blue$' --format '{{.Names}}'
-}
+# With no router, no application container is receiving user traffic. Recreate blue
+# from this build so a container left by an interrupted bootstrap cannot be reused
+# with a stale APP_VERSION or image reference.
+Write-Host "No working router exists; recreating blue from $ImageReference."
+$null = Invoke-DockerCommand { docker rm -f healthconnect-blue }
 
-if ($blueLookup.ExitCode -ne 0) {
-    throw 'Unable to query Docker for the blue baseline.'
+$blueCreate = Invoke-DockerCommand {
+    docker compose up -d --no-deps --force-recreate blue
 }
-
-if ($blueLookup.Output -notcontains 'healthconnect-blue') {
-    Write-Host 'No blue baseline exists; creating the initial known-good environment.'
-    $blueCreate = Invoke-DockerCommand { docker compose up -d --no-deps blue }
-    if ($blueCreate.Output) { $blueCreate.Output | Write-Host }
-    if ($blueCreate.ExitCode -ne 0) { throw 'Unable to create the blue baseline.' }
-}
-else {
-    $blueStart = Invoke-DockerCommand { docker start healthconnect-blue }
-    if ($blueStart.ExitCode -ne 0) { throw 'Unable to start the existing blue baseline.' }
-}
+if ($blueCreate.Output) { $blueCreate.Output | Write-Host }
+if ($blueCreate.ExitCode -ne 0) { throw 'Unable to create the blue baseline.' }
 
 & "$PSScriptRoot/wait-for-health.ps1" -Colour blue -ExpectedVersion $Version
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

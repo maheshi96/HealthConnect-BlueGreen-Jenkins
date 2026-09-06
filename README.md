@@ -158,10 +158,10 @@ Invoke-RestMethod http://localhost:5000/version
 
 ## First-run Jenkins behaviour
 
-On the first build, `healthconnect-router` and `healthconnect-blue` do not exist yet. This is expected. The Windows scripts query `docker ps -a` and use explicit Docker exit codes so Jenkins does not misinterpret a normal "no such object" probe as a terminating `NativeCommandError`. A successful first bootstrap prints:
+On the first build, `healthconnect-router` and `healthconnect-blue` do not exist yet. This is expected. The Windows scripts query `docker ps -a` and use explicit Docker exit codes so Jenkins does not misinterpret a normal "no such object" probe as a terminating `NativeCommandError`. If an interrupted earlier build left a stale blue container but no working router, the bootstrap safely recreates blue from the current immutable image. A successful bootstrap prints:
 
 ```text
-No blue baseline exists; creating the initial known-good environment.
+No working router exists; recreating blue from healthconnect-app:<build-number>.
 HEALTH CHECK PASSED: blue version <build-number>
 BASELINE READY: router and blue environment are reachable.
 ```

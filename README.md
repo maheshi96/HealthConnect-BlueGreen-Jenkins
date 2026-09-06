@@ -156,6 +156,16 @@ Invoke-RestMethod http://localhost:5000/version
 Invoke-RestMethod http://localhost:5000/version
 ```
 
+## First-run Jenkins behaviour
+
+On the first build, `healthconnect-router` and `healthconnect-blue` do not exist yet. This is expected. The Windows scripts query `docker ps -a` and use explicit Docker exit codes so Jenkins does not misinterpret a normal "no such object" probe as a terminating `NativeCommandError`. A successful first bootstrap prints:
+
+```text
+No blue baseline exists; creating the initial known-good environment.
+HEALTH CHECK PASSED: blue version <build-number>
+BASELINE READY: router and blue environment are reachable.
+```
+
 ## Security and compliance boundary
 
 The application uses synthetic records, secret injection, constant-time token comparison, rate limiting, security headers, no-store responses, generic errors, non-root containers, read-only application filesystems, and disabled Nginx access logs. These are demonstrable controls, but this local HTTP lab is not a production HIPAA environment. Production also requires TLS, a real identity provider with MFA, role-based authorisation, encrypted storage, protected audit logs, secret rotation, monitoring, backup/recovery, and a formal risk assessment.

@@ -33,12 +33,12 @@ docker cp "${container}:/zap/wrk/zap-report.html" reports/zap-report.html
 docker cp "${container}:/zap/wrk/zap-report.json" reports/zap-report.json
 docker rm -f $container *> $null
 
-# ZAP baseline: 0 = pass, 1 = warnings, 2/3 = release-blocking failure/error.
-if ($zapExitCode -gt 1) {
+# ZAP baseline: 0 = pass, 1 = policy FAIL, 2 = warnings only, 3 = scan error.
+if ($zapExitCode -eq 1 -or $zapExitCode -eq 3) {
     throw "OWASP ZAP failed with exit code $zapExitCode."
 }
 
-if ($zapExitCode -eq 1) {
+if ($zapExitCode -eq 2) {
     Write-Host 'OWASP ZAP completed with reviewed warnings and no blocking failures.'
 }
 else {

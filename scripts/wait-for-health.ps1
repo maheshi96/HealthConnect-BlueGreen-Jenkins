@@ -14,13 +14,33 @@ param(
 $ErrorActionPreference = 'Stop'
 $container = "healthconnect-$Colour"
 
+function Invoke-DockerCommand {
+    param([Parameter(Mandatory = $true)][scriptblock]$Command)
+
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $Command 2>$null
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
-    $health = docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container 2>$null
+    $healthProbe = Invoke-DockerCommand {
+        docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container
+    }
+    $health = [string]($healthProbe.Output -join "`n")
 
-    if ($LASTEXITCODE -eq 0 -and $health -eq 'healthy') {
-        $response = docker exec $container wget -qO- http://127.0.0.1:3000/health 2>$null
+    if ($healthProbe.ExitCode -eq 0 -and $health -eq 'healthy') {
+        $responseProbe = Invoke-DockerCommand {
+            docker exec $container wget -qO- http://127.0.0.1:3000/health
+        }
+        $response = [string]($responseProbe.Output -join "`n")
 
-        if ($LASTEXITCODE -eq 0 -and
+        if ($responseProbe.ExitCode -eq 0 -and
             $response -match ('"deployment"\s*:\s*"' + [regex]::Escape($Colour) + '"') -and
             $response -match ('"version"\s*:\s*"' + [regex]::Escape($ExpectedVersion) + '"')) {
             Write-Host "HEALTH CHECK PASSED: $Colour version $ExpectedVersion"
